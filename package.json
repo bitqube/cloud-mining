@@ -6,22 +6,45 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "mrr:smoke": "tsx --env-file=.env scripts/mrr-smoke.ts",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:dev": "tsx scripts/dev-db.ts",
+    "worker": "tsx --env-file=.env src/worker/index.ts",
+    "db:seed": "tsx --env-file=.env scripts/seed.ts",
+    "test:int": "TEST_DATABASE_URL=postgresql://bitqube:bitqube@localhost:54329/bitqube_test vitest run int.test"
   },
   "dependencies": {
+    "@prisma/client": "^6.16.2",
+    "decimal.js": "^10.6.0",
+    "next": "15.5.4",
+    "nodemailer": "^7.0.13",
+    "qrcode": "^1.5.4",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "next": "15.5.4"
+    "three": "^0.170.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
-    "typescript": "^5",
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/nodemailer": "^8.0.2",
+    "@types/qrcode": "^1.5.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@tailwindcss/postcss": "^4",
-    "tailwindcss": "^4",
+    "@types/three": "^0.170.0",
+    "embedded-postgres": "^17.10.0-beta.17",
     "eslint": "^9",
     "eslint-config-next": "15.5.4",
-    "@eslint/eslintrc": "^3"
+    "prisma": "^6.16.2",
+    "tailwindcss": "^4",
+    "tsx": "^4.20.5",
+    "typescript": "^5",
+    "vitest": "^3.2.4"
   }
 }

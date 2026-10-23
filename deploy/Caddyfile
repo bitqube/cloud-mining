@@ -1,0 +1,38 @@
+# /etc/caddy/Caddyfile on the app server.
+#
+# The site sits behind Cloudflare's proxy, which hides the server's IP. Cloudflare's SSL
+# mode for this hostname is Full (strict), set by a Configuration Rule, so it connects
+# here over HTTPS and checks the certificate: a Cloudflare Origin Certificate in
+# /etc/caddy/certs (no Let's Encrypt). ufw only lets Cloudflare's IP ranges reach 80/443.
+
+{
+	servers {
+		# Real visitor IPs in logs: trust CF-Connecting-IP only from Cloudflare.
+		# Ranges from https://www.cloudflare.com/ips/ (refresh with deploy/cloudflare-ips.sh).
+		import /etc/caddy/cloudflare-ips.caddy
+		client_ip_headers CF-Connecting-IP
+	}
+}
+
+cloud.bitqube.org {
+	tls /etc/caddy/certs/cloud.pem /etc/caddy/certs/cloud.key
+
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	reverse_proxy 127.0.0.1:3000
+
+	log {
+		output file /var/log/caddy/cloud.log {
+			roll_size 20MiB
+			roll_keep 5
+		}
+	}
+}
