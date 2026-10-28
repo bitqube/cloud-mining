@@ -6,6 +6,7 @@ import type { BtqWallet } from "./btq/wallet";
 import { planMinutes } from "./coin-format";
 import { addressHint, isValidPayoutAddress, parseOwnPool } from "./coins";
 import { queueOrderEmail } from "./email/outbox";
+import { kycBlockReason } from "./kyc/service";
 import { claimQuote, QuoteUnavailableError } from "./pricing-service";
 import { getSettings } from "./settings";
 
@@ -45,6 +46,8 @@ export function splitPrice(priceUsd: Decimal.Value, btqSharePct: number): { btqU
 export async function createOrderFromQuote(db: PrismaClient, opts: OrderInput) {
   if (opts.method === "MANUAL" || opts.method === "BTQ") throw new OrderError("Choose how to pay the rest of the price.");
   const settings = await getSettings(db);
+  const kycBlock = kycBlockReason(settings, await db.user.findUniqueOrThrow({ where: { id: opts.userId }, select: { kycStatus: true } }));
+  if (kycBlock) throw new OrderError(kycBlock);
   const share = opts.btqSharePct;
   if (!Number.isInteger(share) || share < 0 || share > 100) throw new OrderError("Choose how much to pay in BTQ.");
   if (share > 0 && !settings["btq.enabled"]) throw new OrderError("BTQ payments are not available right now.");

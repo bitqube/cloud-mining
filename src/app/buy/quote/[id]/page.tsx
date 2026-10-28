@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { ButtonLink, Card, Page } from "@/components/ui";
+import { Alert, ButtonLink, Card, Page } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { btqUnavailableReason } from "@/lib/btq/payments";
 import { btqWalletFromEnv } from "@/lib/btq/wallet";
@@ -7,6 +7,7 @@ import { coinHashrate, minutesLabel } from "@/lib/coin-format";
 import { addressHint } from "@/lib/coins";
 import { db } from "@/lib/db";
 import { usd } from "@/lib/format";
+import { kycBlockReason } from "@/lib/kyc/service";
 import { getSettings } from "@/lib/settings";
 import { CheckoutForm } from "./checkout-form";
 
@@ -28,6 +29,7 @@ export default async function QuotePage({ params }: { params: Promise<{ id: stri
   const price = Number(quote.priceUsd);
   const byUsd = price > 0 ? Math.floor((Number(settings["btq.maxOrderUsd"]) / price) * 100) : 0;
   const maxShare = btqOff ? 0 : Math.max(0, Math.min(settings["btq.maxSharePct"], byUsd, 100));
+  const kycBlock = kycBlockReason(settings, user);
   const saved = (user.payoutAddresses as Record<string, string> | null)?.[coin.id] ?? (coin.id === "BTQ" ? (user.btqAddress ?? "") : "");
 
   return (
@@ -57,6 +59,12 @@ export default async function QuotePage({ params }: { params: Promise<{ id: stri
             <div className="space-y-4">
               <p className="text-sm text-muted">This price has expired. Market prices move, so please get a fresh one.</p>
               <ButtonLink href={`/buy?coin=${coin.id}`}>Get a new price</ButtonLink>
+            </div>
+          ) : kycBlock ? (
+            <div className="space-y-4">
+              <Alert tone="warn">{kycBlock}</Alert>
+              <ButtonLink href={`/kyc?next=${encodeURIComponent(`/buy/quote/${quote.id}`)}`}>Verify identity</ButtonLink>
+              <p className="text-xs text-muted">This price is held until it expires; if it runs out while you verify, just get a new one.</p>
             </div>
           ) : (
             <CheckoutForm

@@ -1,12 +1,15 @@
 import Decimal from "decimal.js";
-import { Button, Input, Page, Table, Td } from "@/components/ui";
+import { Button, Card, Input, Page, Table, Td } from "@/components/ui";
 import { Flash } from "@/components/flash";
 import { db } from "@/lib/db";
 import { dateTime, multiplier, usd } from "@/lib/format";
 import { getSettings } from "@/lib/settings";
-import { setSuspendedAction, setUserMultiplierAction, setUserRoleAction } from "../actions";
+import { diditConfig } from "@/lib/kyc/didit";
+import { setKycStatusAction, setSettingAction, setSuspendedAction, setUserMultiplierAction, setUserRoleAction } from "../actions";
 
 export const dynamic = "force-dynamic";
+
+const KYC_LABEL = { NONE: "Not verified", PENDING: "In progress", REVIEW: "In review", APPROVED: "Verified", DECLINED: "Declined" } as const;
 
 export default async function AdminUsers({ searchParams }: { searchParams: Promise<{ q?: string; ok?: string; error?: string }> }) {
   const sp = await searchParams;
@@ -21,14 +24,40 @@ export default async function AdminUsers({ searchParams }: { searchParams: Promi
     }),
   ]);
   const global = settings["pricing.globalMultiplier"];
+  const kycOn = settings["kyc.required"];
+  const kycReady = diditConfig() !== null;
 
   return (
     <Page title="Users">
       <Flash sp={sp} />
+      <Card className="mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div className="text-sm font-semibold">
+              Identity verification is <span className={kycOn ? "text-ok" : "text-warn"}>{kycOn ? "REQUIRED" : "OFF"}</span>
+            </div>
+            <p className="text-sm text-muted">
+              {kycOn
+                ? "Every customer must pass a Didit check before placing an order."
+                : kycReady
+                  ? "Customers can order without verifying."
+                  : "Set DIDIT_API_KEY, DIDIT_WORKFLOW_ID and DIDIT_WEBHOOK_SECRET on the server before turning this on."}
+            </p>
+          </div>
+          {(kycOn || kycReady) && (
+            <form action={setSettingAction}>
+              <input type="hidden" name="back" value="/admin/users" />
+              <input type="hidden" name="key" value="kyc.required" />
+              <input type="hidden" name="value" value={String(!kycOn)} />
+              <Button variant={kycOn ? "danger" : "primary"}>{kycOn ? "Stop requiring" : "Require verification"}</Button>
+            </form>
+          )}
+        </div>
+      </Card>
       <form className="mb-4 max-w-sm">
         <Input name="q" defaultValue={sp.q} placeholder="Search email or name" />
       </form>
-      <Table head={["Customer", "Joined", "Orders", "Spent", "Markup", "Role", ""]} empty="No users.">
+      <Table head={["Customer", "Joined", "Identity", "Orders", "Spent", "Markup", "Role", ""]} empty="No users.">
         {users.map((u) => {
           const spent = u.orders.reduce((s, o) => s.add(o.priceUsd.toString()), new Decimal(0));
           return (
@@ -38,6 +67,18 @@ export default async function AdminUsers({ searchParams }: { searchParams: Promi
                 <div className="text-xs text-muted">{u.name ?? ""}</div>
               </Td>
               <Td className="text-xs text-muted">{dateTime(u.createdAt)}</Td>
+              <Td>
+                <div className={u.kycStatus === "APPROVED" ? "text-ok" : u.kycStatus === "DECLINED" ? "text-bad" : "text-muted"}>
+                  {KYC_LABEL[u.kycStatus]}
+                </div>
+                <form action={setKycStatusAction}>
+                  <input type="hidden" name="userId" value={u.id} />
+                  <input type="hidden" name="status" value={u.kycStatus === "APPROVED" ? "NONE" : "APPROVED"} />
+                  <button className="text-xs text-muted hover:text-text" title={u.kycSessionId ? `Didit session ${u.kycSessionId}` : undefined}>
+                    {u.kycStatus === "APPROVED" ? "Reset" : "Mark verified"}
+                  </button>
+                </form>
+              </Td>
               <Td className="num">{u.orders.length}</Td>
               <Td className="num">{usd(spent)}</Td>
               <Td>

@@ -15,6 +15,7 @@ export interface Settings {
   "slots.minBookedPct": number; // a shared rig is rented once this share of its day is sold…
   "slots.maxWaitHours": number; // …or once its first booking has waited this long
   "slots.minSlotMinutes": number; // shortest piece an order is split into (each costs a pool switch)
+  "kyc.required": boolean; // customers must pass identity verification (Didit) before ordering
   "btq.enabled": boolean; // BTQ offered at checkout
   "btq.maxSharePct": number; // most of an order's price that may be paid in BTQ
   "btq.usdRate": Decimal; // BTQ price, converts the BTQ part of a price (set by hand, or by the VinDAX feed)
@@ -38,6 +39,7 @@ export const DEFAULTS: Settings = {
   "slots.minBookedPct": 50,
   "slots.maxWaitHours": 12,
   "slots.minSlotMinutes": 30,
+  "kyc.required": false,
   "btq.enabled": false,
   "btq.maxSharePct": 100,
   "btq.usdRate": new Decimal(0),
@@ -72,6 +74,7 @@ const PARSERS: { [K in SettingKey]: Parser<K> } = {
   "slots.minBookedPct": num(0, 100),
   "slots.maxWaitHours": num(0, 168),
   "slots.minSlotMinutes": num(5, 720),
+  "kyc.required": bool,
   "btq.enabled": bool,
   "btq.maxSharePct": num(1, 100),
   "btq.usdRate": (raw) => {

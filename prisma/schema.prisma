@@ -30,6 +30,15 @@ enum OrderStatus {
   CANCELLED
 }
 
+// Identity verification (Didit). Only the outcome is stored here; documents stay with Didit.
+enum KycStatus {
+  NONE // never started, or the last attempt was abandoned or expired
+  PENDING // started, not finished
+  REVIEW // finished, Didit is reviewing it by hand
+  APPROVED
+  DECLINED
+}
+
 enum PaymentMethod {
   STRIPE
   USDT
@@ -90,6 +99,9 @@ model User {
   payoutAddresses Json            @default("{}")
   // Per-customer markup override (e.g. 2.5 for a long-term buyer); null = global setting.
   priceMultiplier Decimal?        @db.Decimal(8, 4)
+  kycStatus       KycStatus       @default(NONE)
+  kycSessionId    String? // Didit session of the latest attempt
+  kycUpdatedAt    DateTime?
   createdAt       DateTime        @default(now())
   orders          Order[]
   quotes          Quote[]

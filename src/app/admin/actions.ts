@@ -116,6 +116,18 @@ export async function setSuspendedAction(form: FormData) {
   });
 }
 
+// Manual override, e.g. for a customer Didit couldn't verify but an admin has checked by hand.
+export async function setKycStatusAction(form: FormData) {
+  await run("/admin/users", async (_adminId, adminEmail) => {
+    const userId = str(form, "userId");
+    const status = str(form, "status");
+    if (status !== "APPROVED" && status !== "NONE") throw new Error("unknown KYC status");
+    const u = await db.user.update({ where: { id: userId }, data: { kycStatus: status, kycUpdatedAt: new Date() } });
+    console.log(`kyc: ${adminEmail} set ${u.email} to ${status}`);
+    return status === "APPROVED" ? `${u.email} marked as verified.` : `${u.email} must verify again.`;
+  });
+}
+
 export async function savePackageAction(form: FormData) {
   await run("/admin/packages", async () => {
     const name = str(form, "name");
