@@ -11,6 +11,7 @@ import { testEmail } from "@/lib/email/templates";
 import Decimal from "decimal.js";
 import { coinProblems, houseTarget, isValidPayoutAddress } from "@/lib/coins";
 import { sharedMrrApi } from "@/lib/providers";
+import { refreshBtqPrice } from "@/lib/btq/price-feed";
 import { adminSetStatus, markPaid } from "@/lib/order-service";
 import { setGlobalMultiplier, setUserMultiplier } from "@/lib/pricing-service";
 import { isSettingKey, setSetting } from "@/lib/settings";
@@ -53,6 +54,8 @@ export async function setSettingAction(form: FormData) {
     const key = str(form, "key");
     if (!isSettingKey(key)) throw new Error(`unknown setting ${key}`);
     await setSetting(db, key, str(form, "value"));
+    // Turning the VinDAX price on, or moving its limits, takes effect now rather than at the worker's next check.
+    if (key === "btq.priceAuto" || key === "btq.priceMinUsd" || key === "btq.priceMaxUsd") await refreshBtqPrice(db, console.log);
     return `${key} updated.`;
   });
 }
