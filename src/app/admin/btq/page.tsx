@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Flash } from "@/components/flash";
 import { Alert, Button, Card, Input, Page, Stat, Table, Td } from "@/components/ui";
+import { readFeedState, STALE_MS, vindaxConfig } from "@/lib/btq/price-feed";
 import { btqWalletFromEnv, type NodeStatus } from "@/lib/btq/wallet";
 import { db } from "@/lib/db";
 import { dateTime, usd } from "@/lib/format";
@@ -9,7 +10,7 @@ import { setSettingAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 
-// The BTQ price is typed by hand; after this long it gets a warning.
+// A price typed by hand gets a warning after this long.
 const RATE_STALE_HOURS = 24;
 // getnewaddress needs the wallet unlocked once the keypool runs out.
 const KEYPOOL_LOW = 500;
@@ -17,6 +18,18 @@ const KEYPOOL_LOW = 500;
 const EDITABLE: Array<{ key: SettingKey; label: string; hint: string; step?: string }> = [
   { key: "btq.maxSharePct", label: "Most of a price payable in BTQ (%)", hint: "Customers choose 0% up to this; the rest is paid by card or USDT. 100 = all of it." },
   { key: "btq.usdRate", label: "BTQ price (USD)", hint: "Converts the BTQ part of a price into BTQ at checkout.", step: "any" },
+  {
+    key: "btq.priceMinUsd",
+    label: "VinDAX price floor (USD)",
+    hint: "A VinDAX price below this is not used and admins are alerted. 0 = no floor.",
+    step: "any",
+  },
+  {
+    key: "btq.priceMaxUsd",
+    label: "VinDAX price ceiling (USD)",
+    hint: "A VinDAX price above this is not used and admins are alerted. 0 = no ceiling.",
+    step: "any",
+  },
   { key: "btq.confirmations", label: "Confirmations", hint: "Blocks (about a minute each) before a BTQ payment counts as paid." },
   {
     key: "btq.maxOrderUsd",
@@ -33,9 +46,10 @@ const EDITABLE: Array<{ key: SettingKey; label: string; hint: string; step?: str
 export default async function AdminBtq({ searchParams }: { searchParams: Promise<{ ok?: string; error?: string }> }) {
   const sp = await searchParams;
   const wallet = btqWalletFromEnv();
-  const [settings, rateRow, payments, node] = await Promise.all([
+  const [settings, rateRow, feed, payments, node] = await Promise.all([
     getSettings(db),
     db.setting.findUnique({ where: { key: "btq.usdRate" } }),
+    readFeedState(db),
     db.payment.findMany({ where: { method: "BTQ" }, orderBy: { createdAt: "desc" }, take: 25, include: { order: { select: { id: true, status: true } } } }),
     wallet
       ? wallet
@@ -45,13 +59,20 @@ export default async function AdminBtq({ searchParams }: { searchParams: Promise
       : Promise.resolve(null),
   ]);
   const on = settings["btq.enabled"];
+  const auto = settings["btq.priceAuto"];
   const rateAgeH = rateRow ? (Date.now() - rateRow.updatedAt.getTime()) / 3_600_000 : null;
 
   const warnings: string[] = [];
   if (!wallet) warnings.push("The node is not connected: set BTQ_RPC_URL, BTQ_RPC_USER and BTQ_RPC_PASSWORD on the server.");
   if (node && !node.ok) warnings.push(`The node did not answer: ${node.error}`);
-  if (settings["btq.usdRate"].lte(0)) warnings.push("No BTQ price is set, so customers can't pay in BTQ.");
-  else if (rateAgeH !== null && rateAgeH > RATE_STALE_HOURS)
+  if (settings["btq.usdRate"].lte(0))
+    warnings.push(
+      auto
+        ? "No usable price from VinDAX, so customers can't pay in BTQ. See the price feed below."
+        : "No BTQ price is set, so customers can't pay in BTQ.",
+    );
+  else if (auto && feed && !feed.ok) warnings.push(`The last VinDAX check was not used: ${feed.error}. The previous price stays for now.`);
+  else if (!auto && rateAgeH !== null && rateAgeH > RATE_STALE_HOURS)
     warnings.push(`The BTQ price was last changed ${Math.floor(rateAgeH / 24)} day(s) ago. Check it still matches the market.`);
   if (node?.ok) {
     const s: NodeStatus = node.s;
@@ -104,8 +125,35 @@ export default async function AdminBtq({ searchParams }: { searchParams: Promise
         </div>
       )}
 
+      <Card className="mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div className="text-sm font-semibold">
+              Price from VinDAX is <span className={auto ? "text-ok" : "text-muted"}>{auto ? "ON" : "OFF"}</span>
+            </div>
+            <p className="text-sm text-muted">
+              {auto
+                ? `Checked every 10 minutes (${vindaxConfig().symbol}). Uses the lower of the last trade and the best bid. With no usable price for ${STALE_MS / 3_600_000} hours, BTQ checkout turns off.`
+                : "The BTQ price below is set by hand."}
+            </p>
+          </div>
+          <form action={setSettingAction}>
+            <input type="hidden" name="back" value="/admin/btq" />
+            <input type="hidden" name="key" value="btq.priceAuto" />
+            <input type="hidden" name="value" value={String(!auto)} />
+            <Button variant="secondary">{auto ? "Set by hand" : "Use VinDAX"}</Button>
+          </form>
+        </div>
+        {feed && (
+          <p className="mt-3 text-xs text-muted">
+            Last check {dateTime(new Date(feed.checkedAt))}: {feed.ok ? `used $${feed.price}` : `not used (${feed.error})`}
+            {feed.last !== undefined && ` · last trade $${feed.last} · bid $${feed.bid} · ask $${feed.ask} · 24h volume ${usd(feed.volumeUsd ?? 0)}`}
+          </p>
+        )}
+      </Card>
+
       <div className="mb-6 grid gap-4 lg:grid-cols-2">
-        {EDITABLE.map((s) => (
+        {EDITABLE.filter((s) => !(auto && s.key === "btq.usdRate")).map((s) => (
           <Card key={s.key}>
             <form action={setSettingAction} className="space-y-2">
               <input type="hidden" name="back" value="/admin/btq" />

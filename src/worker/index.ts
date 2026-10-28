@@ -2,6 +2,7 @@
 // Uses its own MRR key (MRR_WORKER_API_KEY); see mrrClientFromEnv for why.
 process.env.BQ_PROCESS = "worker";
 import { watchBtqPayments } from "../lib/btq/payments";
+import { refreshBtqPrice } from "../lib/btq/price-feed";
 import { btqWalletFromEnv } from "../lib/btq/wallet";
 import { db } from "../lib/db";
 import { smtpSender } from "../lib/email/mailer";
@@ -23,6 +24,7 @@ import {
 // Slots switch on tick boundaries, so a slot starts at most one tick late.
 const TICK_MS = Number(process.env.WORKER_TICK_MS ?? 30_000);
 const POLL_EVERY_TICKS = Number(process.env.WORKER_POLL_EVERY ?? 4); // ~2 min at the default tick
+const PRICE_EVERY_TICKS = 20; // BTQ price from VinDAX, ~10 min at the default tick (quotes hold a price for 15)
 
 const log = (msg: string) => console.log(`${new Date().toISOString()} ${msg}`);
 
@@ -45,6 +47,7 @@ async function main() {
   );
   for (let tick = 0; !stopping; tick++) {
     const jobs: Array<[string, () => Promise<number>]> = [];
+    if (tick % PRICE_EVERY_TICKS === 0) jobs.push(["price", () => refreshBtqPrice(db, log)]);
     // First, so an order paid in BTQ this tick is booked this tick.
     if (wallet) jobs.push(["btq", () => watchBtqPayments(db, wallet, log)]);
     if (tick % POLL_EVERY_TICKS === 0) jobs.push(["poll", () => pollActiveRentals(deps)]);

@@ -17,7 +17,10 @@ export interface Settings {
   "slots.minSlotMinutes": number; // shortest piece an order is split into (each costs a pool switch)
   "btq.enabled": boolean; // BTQ offered at checkout
   "btq.maxSharePct": number; // most of an order's price that may be paid in BTQ
-  "btq.usdRate": Decimal; // admin-set BTQ price, converts the BTQ part of a price
+  "btq.usdRate": Decimal; // BTQ price, converts the BTQ part of a price (set by hand, or by the VinDAX feed)
+  "btq.priceAuto": boolean; // keep btq.usdRate updated from VinDAX (lib/btq/price-feed)
+  "btq.priceMinUsd": number; // the feed's price is not used below this (0 = no floor)
+  "btq.priceMaxUsd": number; // …or above this (0 = no ceiling)
   "btq.confirmations": number; // blocks before a BTQ payment counts as paid
   "btq.maxOrderUsd": number; // largest order payable in BTQ (a reversed payment costs at most this)
   "btq.paymentWindowMinutes": number; // how long the customer has to send BTQ
@@ -38,6 +41,9 @@ export const DEFAULTS: Settings = {
   "btq.enabled": false,
   "btq.maxSharePct": 100,
   "btq.usdRate": new Decimal(0),
+  "btq.priceAuto": false,
+  "btq.priceMinUsd": 0,
+  "btq.priceMaxUsd": 0,
   "btq.confirmations": 6,
   "btq.maxOrderUsd": 200,
   "btq.paymentWindowMinutes": 60,
@@ -73,6 +79,9 @@ const PARSERS: { [K in SettingKey]: Parser<K> } = {
     if (!d.isFinite() || d.lt(0)) throw new Error("must be a non-negative number");
     return d;
   },
+  "btq.priceAuto": bool,
+  "btq.priceMinUsd": num(0, 1_000_000),
+  "btq.priceMaxUsd": num(0, 1_000_000),
   "btq.confirmations": num(1, 1000),
   "btq.maxOrderUsd": num(1, 1_000_000),
   "btq.paymentWindowMinutes": num(15, 1440),
