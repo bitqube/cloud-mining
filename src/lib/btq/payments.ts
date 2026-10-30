@@ -86,6 +86,9 @@ async function once(db: PrismaClient, orderId: string, type: string, run: () => 
   await run();
 }
 
+const hasEvent = async (db: PrismaClient, orderId: string, types: string[]) =>
+  !!(await db.orderEvent.findFirst({ where: { orderId, type: { in: types } }, select: { id: true } }));
+
 // Worker job: compare every watched deposit address with what the node has received.
 export async function watchBtqPayments(db: PrismaClient, wallet: BtqWallet, log: (m: string) => void, now = new Date()): Promise<number> {
   const settings = await getSettings(db);
@@ -133,9 +136,11 @@ export async function watchBtqPayments(db: PrismaClient, wallet: BtqWallet, log:
     }
 
     if (!r || r.amount.lte(0)) continue;
+    const before = p.receivedAsset ?? new Decimal(0);
     changed += await recordProgress(db, p, r.amount, r.confirmations, r.txids, now);
     const seenAt = p.seenAt ?? now;
     const due = p.amountAsset!;
+    const windowClosed = !!p.expiresAt && now > p.expiresAt;
 
     // Sent after the window closed, or to an order already cancelled: never provision
     // automatically, because the locked price may no longer cover the hashrate.
@@ -152,8 +157,27 @@ export async function watchBtqPayments(db: PrismaClient, wallet: BtqWallet, log:
       continue;
     }
 
+    // Short when the window closed, topped up since: the locked price has lapsed, so an
+    // admin decides, as for a late payment. Once flagged, it stays flagged.
+    if (
+      windowClosed &&
+      isPaidInFull(r.amount, due) &&
+      (!isPaidInFull(before, due) || (await hasEvent(db, p.orderId, ["payment.underpaid", "payment.completedLate"])))
+    ) {
+      await once(db, p.orderId, "payment.completedLate", async () => {
+        await logEvent(db, p.orderId, "payment.completedLate", `${r.amount} of ${due} BTQ received, completed after the payment window`);
+        await queueAdminAlert(
+          db,
+          `BTQ payment for order ${ref} completed late`,
+          `${r.amount} BTQ (of ${due} due) has now arrived at ${p.providerRef}, but only part of it came before the payment window closed. It was not accepted automatically. Accept it from the order page, or refund it from the node's wallet.`,
+          p.orderId,
+        );
+      });
+      continue;
+    }
+
     if (!isPaidInFull(r.amount, due)) {
-      if (p.expiresAt && now > p.expiresAt) {
+      if (windowClosed) {
         await once(db, p.orderId, "payment.underpaid", async () => {
           await logEvent(db, p.orderId, "payment.underpaid", `Underpaid: ${r.amount} of ${due} BTQ received`);
           await queueAdminAlert(

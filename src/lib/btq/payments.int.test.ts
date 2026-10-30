@@ -209,6 +209,46 @@ describe.skipIf(!url)("BTQ payments (integration)", () => {
     expect(await alerts(order.id)).toEqual([`[BitQube admin] BTQ underpayment on order ${order.id.slice(-8)}`]);
   });
 
+  it("does not accept a split payment completed after the window, but alerts", async () => {
+    const f = fakeWallet();
+    const { order, address, payment } = await btqOrder(f);
+    f.pay(address, "3000", 10);
+    await watch(f); // first part in time
+    const after = new Date(payment.expiresAt!.getTime() + 60_000);
+    f.pay(address, "2000", 10); // the rest after the window, before the next check
+    await watch(f, after);
+    await watch(f, new Date(after.getTime() + 60_000));
+    expect(await status(order.id)).toBe("PENDING_PAYMENT");
+    expect(await alerts(order.id)).toEqual([`[BitQube admin] BTQ payment for order ${order.id.slice(-8)} completed late`]);
+  });
+
+  it("does not accept a top-up after the underpayment alert", async () => {
+    const f = fakeWallet();
+    const { order, address, payment } = await btqOrder(f);
+    f.pay(address, "4000", 10);
+    await watch(f);
+    const after = new Date(payment.expiresAt!.getTime() + 60_000);
+    await watch(f, after); // underpaid alert
+    f.pay(address, "1000", 10);
+    await watch(f, new Date(after.getTime() + 60_000));
+    await watch(f, new Date(after.getTime() + 120_000));
+    expect(await status(order.id)).toBe("PENDING_PAYMENT");
+    expect(await alerts(order.id)).toEqual([
+      `[BitQube admin] BTQ underpayment on order ${order.id.slice(-8)}`,
+      `[BitQube admin] BTQ payment for order ${order.id.slice(-8)} completed late`,
+    ]);
+  });
+
+  it("still accepts a payment sent in full within the window that confirms after it", async () => {
+    const f = fakeWallet();
+    const { order, address, payment } = await btqOrder(f);
+    f.pay(address, "5000", 1);
+    await watch(f);
+    f.confirm(address, 6);
+    await watch(f, new Date(payment.expiresAt!.getTime() + 60_000));
+    expect(await status(order.id)).toBe("PAID");
+  });
+
   it("does not accept a payment first seen after the window, but alerts", async () => {
     const f = fakeWallet();
     const { order, address, payment } = await btqOrder(f);
